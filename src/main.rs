@@ -8,8 +8,8 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
 use tokio::task::spawn;
 
-// static mut connections: Vec<&TcpSocket> = Vec::new();
-
+// Command line arguments datastructure. The inputs and parameters
+// are handled at compile time by CLAP.
 #[derive(Debug, Clap)]
 #[clap(name = "Rust Chatter")]
 struct Args {
@@ -26,9 +26,9 @@ struct Args {
 #[tokio::main]
 async fn main() {
     let args: &Args = &Args::parse();
-
     println!("{:?}", args);
 
+    // We only run a server or client. Client by default.
     if args.is_server {
         setup_server(args).await
     } else {
@@ -37,9 +37,8 @@ async fn main() {
 }
 
 async fn setup_server(args: &Args) {
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:".to_owned() + &args.port)
-        .await
-        .unwrap();
+    let address = "0.0.0.0:".to_owned() + &args.port;
+    let listener = tokio::net::TcpListener::bind(address).await.unwrap();
 
     let connections: Arc<Mutex<Vec<Arc<Mutex<TcpStream>>>>> = Arc::new(Mutex::new(Vec::new()));
 
@@ -50,9 +49,10 @@ async fn setup_server(args: &Args) {
     spawn(replicate(Arc::clone(&connections), rx));
 
     loop {
-        let (conn, _addr) = listener.accept().await.unwrap();
+        // Wait for clients to connect
+        let (conn, _) = listener.accept().await.unwrap();
 
-        // let mut lock = connections.clone().lock().unwrap();
+        // Push new connections to the connections vec
         let mut lock_connections = connections.lock().await;
         let new_conn = Arc::new(Mutex::new(conn));
         lock_connections.push(Arc::clone(&new_conn));
@@ -63,99 +63,93 @@ async fn setup_server(args: &Args) {
 
 async fn replicate(connections: Arc<Mutex<Vec<Arc<Mutex<TcpStream>>>>>, mut rx: Receiver<Vec<u8>>) {
     loop {
-        let data = rx.recv().await.unwrap();
+        // Wait for bytes to be sent over the channel.
+        // The bytes comes from client streams
+        let bytes = rx.recv().await.unwrap();
 
-        let lock_connections = connections.lock().await;
-
-        for conn in lock_connections.iter() {
-            write_to_connection(&data, Arc::clone(conn)).await;
+        // Write bytes to each stream
+        for conn in connections.lock().await.iter() {
+            write_to_connection(&bytes, Arc::clone(conn)).await;
         }
     }
 }
 
-async fn server(conn: Arc<Mutex<TcpStream>>, tx: Arc<Sender<Vec<u8>>>) {
+async fn server(conn: Arc<Mutex<TcpStream>>, atx: Arc<Sender<Vec<u8>>>) {
     // Read Connection
     loop {
-        let data = read_from_connection(conn.clone()).await;
+        // Read bytes so we can send over channel
+        let bytes_result = read_from_connection(conn.clone()).await;
 
-        if data.is_some() {
-            let data = data.unwrap();
+        if bytes_result.is_some() {
+            let bytes = bytes_result.unwrap();
 
-            let content: String = bincode::deserialize(&data).unwrap();
-            println!("Server Received: {:?}", content);
+            let content: String = bincode::deserialize(&bytes).unwrap();
+            println!("Server Received: {}", content);
 
-            tx.send(data).await.unwrap();
+            // Move bytes into channel
+            atx.send(bytes).await.unwrap();
         }
     }
 }
 
 async fn client(args: &Args) {
     let address = format!("{}:{}", args.address, args.port);
-    let stream = tokio::net::TcpStream::connect(address).await.unwrap();
-    let astream = Arc::new(Mutex::new(stream));
+    let conn = tokio::net::TcpStream::connect(address).await.unwrap();
+    let aconn = Arc::new(Mutex::new(conn));
 
     // Write Connection
-    spawn(write_client(Arc::clone(&astream)));
+    spawn(write_client(Arc::clone(&aconn)));
 
     // Read Connection
     loop {
-        let data = read_from_connection(Arc::clone(&astream)).await;
+        let bytes_result = read_from_connection(Arc::clone(&aconn)).await;
 
-        if data.is_some() {
-            let data = data.unwrap();
+        if bytes_result.is_some() {
+            let bytes = bytes_result.unwrap();
 
-            let content: String = bincode::deserialize(&data).unwrap();
-
+            let content: String = bincode::deserialize(&bytes).unwrap();
             println!("Client Received: {}", content);
         }
     }
 }
 
-async fn write_client(astream: Arc<Mutex<TcpStream>>) {
+async fn write_client(aconn: Arc<Mutex<TcpStream>>) {
     loop {
         let mut input = String::new();
-        std::io::stdin().read_line(&mut input).unwrap();
 
+        std::io::stdin().read_line(&mut input).unwrap();
         let input_cleaned = input[0..input.len() - 2].to_string();
 
-        let data = bincode::serialize(&input_cleaned).unwrap();
-
-        write_to_connection(&data, Arc::clone(&astream)).await;
+        let bytes = bincode::serialize(&input_cleaned).unwrap();
+        write_to_connection(&bytes, Arc::clone(&aconn)).await;
     }
 }
 
-async fn write_to_connection(data: &[u8], conn: Arc<Mutex<TcpStream>>) {
-    let size = bincode::serialize(&data.len()).unwrap();
+async fn write_to_connection(bytes: &[u8], conn: Arc<Mutex<TcpStream>>) {
+    let byte_size = bincode::serialize(&bytes.len()).unwrap();
 
-    let mut stream = conn.lock().await;
+    let mut conn_locked = conn.lock().await;
 
-    stream
-        .write_all(&size)
-        .await
-        .expect("Could not write size bytes to stream. ");
-
-    stream
-        .write_all(data)
-        .await
-        .expect("Could not write bytes to stream. ");
+    match conn_locked.try_write(&byte_size) {
+        Ok(_) => conn_locked.write_all(bytes).await.unwrap(),
+        Err(_) => {}
+    }
 }
 
 async fn read_from_connection(conn: Arc<Mutex<TcpStream>>) -> Option<Vec<u8>> {
-    let mut data_size = [0u8; 8];
+    let mut byte_size = [0u8; 8];
+    let mut conn_locked = conn.lock().await;
 
-    let mut stream = conn.lock().await;
-
-    match stream.try_read(&mut data_size) {
+    match conn_locked.try_read(&mut byte_size) {
         Ok(_) => {
-            let size: u64 =
-                bincode::deserialize(&data_size).expect("Could not deserialize size correctly");
+            let size: u64 = bincode::deserialize(&byte_size).expect("Deserialize size failed");
 
-            let mut data = vec![0; size as usize];
-            stream
-                .read_exact(&mut data)
+            let mut bytes = vec![0; size as usize];
+            conn_locked
+                .read_exact(&mut bytes)
                 .await
-                .expect("Can not Read data from stream ");
-            Some(data)
+                .expect("Cant read byte");
+            Some(bytes)
         }
         Err(_) => None,
     }
