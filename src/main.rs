@@ -1,4 +1,6 @@
 use clap::Clap;
+use message::Message;
+use std::env::args;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
@@ -7,6 +9,10 @@ use tokio::sync::mpsc::{Receiver, Sender};
 // std::sync::Mutex is not Send and will cause problems
 use tokio::sync::Mutex;
 use tokio::task::spawn;
+
+use crate::message::Packet;
+
+mod message;
 
 // Command line arguments datastructure. The inputs and parameters
 // are handled at compile time by CLAP.
@@ -21,6 +27,9 @@ struct Args {
 
     #[clap(short, long, required = false, default_value = "23432")]
     port: String,
+
+    #[clap(short, long, required = false, default_value = "unknown")]
+    username: String,
 }
 
 #[tokio::main]
@@ -83,8 +92,8 @@ async fn server(conn: Arc<Mutex<TcpStream>>, atx: Arc<Sender<Vec<u8>>>) {
         if bytes_result.is_some() {
             let bytes = bytes_result.unwrap();
 
-            let content: String = bincode::deserialize(&bytes).unwrap();
-            println!("Server Received: {}", content);
+            let packet: Packet = bincode::deserialize(&bytes).unwrap();
+            println!("Server Received: {:?}", packet);
 
             // Move bytes into channel
             atx.send(bytes).await.unwrap();
@@ -107,8 +116,11 @@ async fn client(args: &Args) {
         if bytes_result.is_some() {
             let bytes = bytes_result.unwrap();
 
-            let content: String = bincode::deserialize(&bytes).unwrap();
-            println!("Client Received: {}", content);
+            let packet: Packet = bincode::deserialize(&bytes).unwrap();
+
+            if let Packet::Message(m) = packet {
+                println!("{}", m.to_string());
+            }
         }
     }
 }
@@ -120,7 +132,12 @@ async fn write_client(aconn: Arc<Mutex<TcpStream>>) {
         std::io::stdin().read_line(&mut input).unwrap();
         let input_cleaned = input[0..input.len() - 2].to_string();
 
-        let bytes = bincode::serialize(&input_cleaned).unwrap();
+        let packet = Packet::Message(Message {
+            user: "USERNAME".to_string(),
+            text: input_cleaned,
+        });
+
+        let bytes = bincode::serialize(&packet).unwrap();
         write_to_connection(&bytes, Arc::clone(&aconn)).await;
     }
 }
