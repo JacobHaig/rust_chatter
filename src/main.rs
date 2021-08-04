@@ -1,6 +1,9 @@
 use clap::Clap;
 use message::Message;
+use rusqlite::Connection;
 use std::env::args;
+use std::error::Error;
+use std::option;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
@@ -12,6 +15,7 @@ use tokio::task::spawn;
 
 use crate::message::Packet;
 
+mod database;
 mod message;
 
 // Command line arguments datastructure. The inputs and parameters
@@ -50,6 +54,7 @@ async fn setup_server(args: &Args) {
     let listener = tokio::net::TcpListener::bind(address).await.unwrap();
 
     let connections: Arc<Mutex<Vec<Arc<Mutex<TcpStream>>>>> = Arc::new(Mutex::new(Vec::new()));
+    // let db = database::start_db("database.db");
 
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let atx = Arc::new(tx);
