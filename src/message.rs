@@ -14,6 +14,8 @@ pub struct Message {
 }
 
 impl Message {
+    /// to_string returns a string representation of the message
+    /// so we can print it in the console.
     pub fn to_string(&self) -> String {
         format!("{}: {}", self.user, self.text)
     }

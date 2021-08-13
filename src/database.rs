@@ -1,7 +1,8 @@
 use crate::database::DataBase::Message;
 use rusqlite::Connection;
+use time::Date;
 
-mod DataBase {
+pub mod DataBase {
 
     #[derive(Debug)]
     pub struct Message {
@@ -11,6 +12,7 @@ mod DataBase {
         pub timestamp: i64,
     }
 
+    /// Create a new database connection if database doesn't exist.
     pub fn open_db(db_name: &str) -> rusqlite::Connection {
         let db = rusqlite::Connection::open(db_name).unwrap();
 
@@ -37,6 +39,18 @@ mod DataBase {
         db
     }
 
+    /// Deletes all messages from the database.
+    pub fn delete_all_messages(db: &mut rusqlite::Connection) {
+        db.execute("DELETE FROM messages", []).unwrap();
+    }
+
+    /// Delete a message from the database.
+    pub fn delete_message(db: &mut rusqlite::Connection, id: i32) {
+        db.execute("DELETE FROM messages WHERE id = ?", [id])
+            .unwrap();
+    }
+
+    /// Inserts a new message into the database.
     pub fn insert_message(db: &rusqlite::Connection, message: Message) {
         db.execute(
             "INSERT INTO messages (username, content, timestampms)
@@ -46,17 +60,17 @@ mod DataBase {
         .unwrap();
     }
 
-    // pub fn remove(&Connection, message: Message) {
-    //     todo!()
-    // }
-
+    /// Returns a list of all messages from the database where a condition is met.
     pub fn where_message(db: &rusqlite::Connection, args: &[&str]) -> Vec<Message> {
         let condition = args.join(" AND ");
 
+        
         let mut stmt = db
             .prepare(format!("SELECT * FROM messages WHERE {}", condition).as_str())
             .unwrap();
 
+        // Execute the statement and get the results
+        // then convert the results into a vector of messages.
         let query_iter = stmt
             .query_map([], |row| {
                 Ok(Message {
@@ -77,6 +91,9 @@ mod DataBase {
     }
 }
 
+/// This start_db function tests the creation of a database,
+/// and the insertion of a message, and the retrieval of a message
+/// from the database.
 #[test]
 fn start_db() {
     let timestamp = chrono::Utc::now().timestamp_millis();
