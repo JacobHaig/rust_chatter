@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::{
-    database::DataBase::{self, MessageArticals},
+    database::{self},
     response::{self, Response},
 };
 
@@ -23,13 +23,13 @@ pub async fn handle_request(request: Request, db: Arc<Mutex<Connection>>) -> Res
 
     match request {
         Request::LastMessages(n) => {
-            let articals = DataBase::get_recent_messages(&database, n);
+            let articals = database::get_recent_messages(&database, n);
 
             let messages = articals
                 .iter()
                 .map(|artical| response::Message {
                     user: artical.username.clone(),
-                    text: artical.content.clone() ,
+                    text: artical.content.clone(),
                 })
                 .collect();
 

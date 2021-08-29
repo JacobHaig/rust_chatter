@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -13,11 +15,9 @@ pub struct Message {
     // datetime: std::time::Instant,
 }
 
-impl Message {
-    /// to_string returns a string representation of the message
-    /// so we can print it in the console.
-    pub fn to_string(&self) -> String {
-        format!("{}: {}", self.user, self.text)
+impl fmt::Display for Message {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.user, self.text)
     }
 }
 

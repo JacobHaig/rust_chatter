@@ -1,5 +1,4 @@
 use clap::Clap;
-use response::Message;
 use rusqlite::Connection;
 
 use std::sync::Arc;
@@ -56,42 +55,16 @@ async fn setup_server(args: &Args) {
     let address = "0.0.0.0:".to_owned() + &args.port;
     let listener = tokio::net::TcpListener::bind(address).await.unwrap();
 
-    // let connections: Arc<Mutex<Vec<Arc<Mutex<TcpStream>>>>> = Arc::new(Mutex::new(Vec::new()));
-    let db = Arc::new(Mutex::new(database::DataBase::open_db("database.db")));
-
-    // let (tx, rx) = tokio::sync::mpsc::channel(100);
-    // let atx = Arc::new(tx);
-
-    // Write Connection
-    // spawn(replicate(Arc::clone(&connections), rx));
+    let db = Arc::new(Mutex::new(database::open_db("database.db")));
 
     loop {
         // Wait for clients to connect
         let (conn, _) = listener.accept().await.unwrap();
 
-        // Push new connections to the connections vec
-        // let mut lock_connections = connections.lock().await;
-        // let new_conn = Arc::new(Mutex::new(conn));
-        // lock_connections.push(Arc::clone(&new_conn));
-
+        // Spawn a new task to handle the client connectison
         spawn(server(conn, Arc::clone(&db)));
     }
 }
-
-/// replcate is a function that takes a message from the channel
-/// and replicates the message to all of the connections.
-// async fn replicate(connections: Arc<Mutex<Vec<Arc<Mutex<TcpStream>>>>>, mut rx: Receiver<Vec<u8>>) {
-//     loop {
-//         // Wait for bytes to be sent over the channel.
-//         // The bytes comes from client streams
-//         let bytes = rx.recv().await.unwrap();
-
-//         // Write bytes to each stream
-//         for conn in connections.lock().await.iter() {
-//             write_to_connection(&bytes, Arc::clone(conn)).await;
-//         }
-//     }
-// }
 
 /// server is a function that handles reading from connections
 /// then handles the request and sends the response back to the client.
@@ -100,21 +73,20 @@ async fn server(conn: TcpStream, db: Arc<Mutex<Connection>>) {
 
     // Read Connection
     loop {
-        // Read bytes so we can send over channel
+        // Read bytes from the connection
         let bytes_result = read_from_connection(Arc::clone(&connection)).await;
 
         if bytes_result.is_some() {
             let bytes = bytes_result.unwrap();
 
+            // Convert bytes to a Request
             let request: Request = bincode::deserialize(&bytes).unwrap();
             println!("Server Received: {:?}", request);
 
-            // Move bytes into channel
-            // atx.send(bytes).await.unwrap();
-
-            // todo!("PROCESS RESPONSE")
+            // Process the response from the request
             let response = handle_request(request, Arc::clone(&db)).await;
 
+            // Sent the response back to the client as bytes
             let bytes = bincode::serialize(&response).unwrap();
             write_to_connection(&bytes, Arc::clone(&connection)).await;
         }
@@ -126,19 +98,20 @@ async fn server(conn: TcpStream, db: Arc<Mutex<Connection>>) {
 /// to the screen.
 async fn client(args: &Args) {
     let address = format!("{}:{}", args.address, args.port);
-    let conn = tokio::net::TcpStream::connect(address).await.unwrap();
-    let aconn = Arc::new(Mutex::new(conn));
+    let conn = Arc::new(Mutex::new(
+        tokio::net::TcpStream::connect(address).await.unwrap(),
+    ));
 
-    // Write Connection
-    // spawn(write_client(Arc::clone(&aconn)));
-
-    // Read Connection
     loop {
-        todo!("SEND REQUEST TO SERVER");
+        tokio::time::sleep(tokio::time::Duration::from_secs_f32(1.0)).await;
 
-        todo!("READ RESPONSE FROM SERVER");
+        // Write Connection
+        let request = Request::LastMessages(1);
+        let bytes = bincode::serialize(&request).unwrap();
+        write_to_connection(&bytes, Arc::clone(&conn)).await;
 
-        let bytes_result = read_from_connection(Arc::clone(&aconn)).await;
+        // Read Connection
+        let bytes_result = read_from_connection(Arc::clone(&conn)).await;
 
         if bytes_result.is_some() {
             let bytes = bytes_result.unwrap();
@@ -155,25 +128,6 @@ async fn client(args: &Args) {
     }
 }
 
-// write_client gets input from the user and writes it to the stream.
-// async fn write_client(aconn: Arc<Mutex<TcpStream>>) {
-//     loop {
-//         let mut input = String::new();
-
-//         // Read input from stdin.
-//         std::io::stdin().read_line(&mut input).unwrap();
-//         let input_cleaned = input[0..input.len() - 2].to_string();
-
-//         let packet = Response::Message(Ve Message {
-//             user: "USERNAME".to_string(),
-//             text: input_cleaned,
-//         });
-
-//         let bytes = bincode::serialize(&packet).unwrap();
-//         write_to_connection(&bytes, Arc::clone(&aconn)).await;
-//     }
-// }
-
 /// write_from_connection() takes a connection and writes the bytes
 /// to the TCP stream. We write the message in to steps.
 /// First we write the size of the message. Then Second we write the message
@@ -185,10 +139,9 @@ async fn write_to_connection(bytes: &[u8], conn: Arc<Mutex<TcpStream>>) {
     let mut conn_locked = conn.lock().await;
 
     // Write the size of the message
-    match conn_locked.try_write(&byte_size) {
+    if conn_locked.try_write(&byte_size).is_ok() {
         // then we can write the message
-        Ok(_) => conn_locked.write_all(bytes).await.unwrap(),
-        Err(_) => {}
+        conn_locked.write_all(bytes).await.unwrap()
     }
 }
 
