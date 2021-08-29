@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum Packet {
-    Message(Message),
-    Image(Image),
+pub enum Response {
+    Message(Vec<Message>),
+    // Image(Image),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -21,8 +21,8 @@ impl Message {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Image {
-    data: (),
-    // datetime: std::time::Instant,
-}
+// #[derive(Serialize, Deserialize, Debug)]
+// struct Image {
+//     data: (),
+//     // datetime: std::time::Instant,
+// }

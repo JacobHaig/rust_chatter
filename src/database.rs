@@ -1,11 +1,11 @@
-use crate::database::DataBase::Message;
+use crate::database::DataBase::MessageArticals;
 use rusqlite::Connection;
 use time::Date;
 
 pub mod DataBase {
 
     #[derive(Debug)]
-    pub struct Message {
+    pub struct MessageArticals {
         pub id: i32,
         pub username: String,
         pub content: String,
@@ -51,7 +51,7 @@ pub mod DataBase {
     }
 
     /// Inserts a new message into the database.
-    pub fn insert_message(db: &rusqlite::Connection, message: Message) {
+    pub fn insert_message(db: &rusqlite::Connection, message: MessageArticals) {
         db.execute(
             "INSERT INTO messages (username, content, timestampms)
             VALUES (?1, ?2, ?3)",
@@ -61,10 +61,9 @@ pub mod DataBase {
     }
 
     /// Returns a list of all messages from the database where a condition is met.
-    pub fn where_message(db: &rusqlite::Connection, args: &[&str]) -> Vec<Message> {
+    pub fn where_message(db: &rusqlite::Connection, args: &[&str]) -> Vec<MessageArticals> {
         let condition = args.join(" AND ");
 
-        
         let mut stmt = db
             .prepare(format!("SELECT * FROM messages WHERE {}", condition).as_str())
             .unwrap();
@@ -73,7 +72,7 @@ pub mod DataBase {
         // then convert the results into a vector of messages.
         let query_iter = stmt
             .query_map([], |row| {
-                Ok(Message {
+                Ok(MessageArticals {
                     id: row.get(0).unwrap(),
                     username: row.get(1).unwrap(),
                     content: row.get(2).unwrap(),
@@ -85,7 +84,36 @@ pub mod DataBase {
         let result = query_iter
             .into_iter()
             .map(|q| q.unwrap())
-            .collect::<Vec<Message>>();
+            .collect::<Vec<MessageArticals>>();
+
+        result
+    }
+    /// Returns the most recent messages from the database.
+    pub fn get_recent_messages(db: &rusqlite::Connection, amount: u32) -> Vec<MessageArticals> {
+        let query = format!(
+            "SELECT * FROM messages ORDER BY timestampms DESC LIMIT {}",
+            amount
+        );
+
+        let mut stmt = db.prepare(&query).unwrap();
+
+        // Execute the statement and get the results
+        // then convert the results into a vector of messages.
+        let query_iter = stmt
+            .query_map([], |row| {
+                Ok(MessageArticals {
+                    id: row.get(0).unwrap(),
+                    username: row.get(1).unwrap(),
+                    content: row.get(2).unwrap(),
+                    timestamp: row.get(3).unwrap(),
+                })
+            })
+            .unwrap();
+
+        let result = query_iter
+            .into_iter()
+            .map(|q| q.unwrap())
+            .collect::<Vec<MessageArticals>>();
 
         result
     }
@@ -100,7 +128,7 @@ fn start_db() {
 
     let db: Connection = DataBase::open_db("database.db");
 
-    let message = Message {
+    let message = MessageArticals {
         id: 0,
         username: "Andrew".to_string(),
         content: "No".to_string(),
