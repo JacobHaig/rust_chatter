@@ -9,8 +9,3 @@ pub enum Response {
     // Image(Image),
 }
 
-// #[derive(Serialize, Deserialize, Debug)]
-// struct Image {
-//     data: (),
-//     // datetime: std::time::Instant,
-// }

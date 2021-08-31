@@ -1,13 +1,6 @@
-// use crate::database::MessageArticals;
 use rusqlite::Connection;
 
-#[derive(Debug)]
-pub struct MessageArtical {
-    pub id: i32,
-    pub username: String,
-    pub content: String,
-    pub timestamp: i64,
-}
+use crate::message;
 
 /// Create a new database connection if database doesn't exist.
 pub fn open_db(db_name: &str) -> rusqlite::Connection {
@@ -47,74 +40,51 @@ pub fn delete_message(db: &mut rusqlite::Connection, id: i32) {
         .unwrap();
 }
 
-/// Inserts a new message into the database.
-pub fn insert_message(db: &rusqlite::Connection, message: MessageArtical) {
-    db.execute(
-        "INSERT INTO messages (username, content, timestampms)
-        VALUES (?1, ?2, ?3)",
-        rusqlite::params![message.username, message.content, message.timestamp],
-    )
-    .unwrap();
-}
-
 /// Adds a new message into the database.
-pub fn add_message(db: &rusqlite::Connection, mess: crate::message::Message) -> () {
-    let message = MessageArtical {
-        id: 0,
-        username: mess.user,
-        content: mess.text,
-        timestamp: chrono::Utc::now().timestamp_millis(),
-    };
-
+pub fn add_message(db: &rusqlite::Connection, message: message::Message) {
     db.execute(
         "INSERT INTO messages (username, content, timestampms)
         VALUES (?1, ?2, ?3)",
-        rusqlite::params![message.username, message.content, message.timestamp],
+        rusqlite::params![
+            message.username,
+            message.content,
+            chrono::Utc::now().timestamp_millis()
+        ],
     )
     .unwrap();
 }
 
 /// Returns a list of all messages from the database where a condition is met.
-pub fn where_message(db: &rusqlite::Connection, args: &[&str]) -> Vec<MessageArtical> {
+pub fn where_message(db: &rusqlite::Connection, args: &[&str]) -> Vec<message::Message> {
     let condition = args.join(" AND ");
+    let query = format!("SELECT * FROM messages WHERE {}", condition);
 
-    let mut stmt = db
-        .prepare(format!("SELECT * FROM messages WHERE {}", condition).as_str())
-        .unwrap();
-
-    // Execute the statement and get the results
-    // then convert the results into a vector of messages.
-    let query_iter = stmt
-        .query_map([], |row| {
-            Ok(MessageArtical {
-                id: row.get(0).unwrap(),
-                username: row.get(1).unwrap(),
-                content: row.get(2).unwrap(),
-                timestamp: row.get(3).unwrap(),
-            })
-        })
-        .unwrap();
-
-    query_iter
-        .into_iter()
-        .map(|q| q.unwrap())
-        .collect::<Vec<MessageArtical>>()
+    get_messages(db, query)
 }
 
 /// Returns the most recent messages from the database.
-pub fn get_recent_messages(db: &rusqlite::Connection, amount: u32) -> Vec<MessageArtical> {
+pub fn get_recent_messages(db: &rusqlite::Connection, amount: u32) -> Vec<message::Message> {
     let query = format!(
         "SELECT * FROM messages ORDER BY timestampms DESC LIMIT {}",
         amount
     );
 
+    get_messages(db, query)
+}
+
+/// Returns the most recent messages from the database.
+pub fn get_messages_at_index(db: &rusqlite::Connection, index: u32) -> Vec<message::Message> {
+    let query = format!("SELECT * FROM messages WHERE id = {}", index);
+
+    get_messages(db, query)
+}
+
+fn get_messages(db: &Connection, query: String) -> Vec<message::Message> {
     let mut stmt = db.prepare(&query).unwrap();
 
-    // Execute the statement and get the results
-    // then convert the results into a vector of messages.
     let query_iter = stmt
         .query_map([], |row| {
-            Ok(MessageArtical {
+            Ok(message::Message {
                 id: row.get(0).unwrap(),
                 username: row.get(1).unwrap(),
                 content: row.get(2).unwrap(),
@@ -122,11 +92,10 @@ pub fn get_recent_messages(db: &rusqlite::Connection, amount: u32) -> Vec<Messag
             })
         })
         .unwrap();
-
     query_iter
         .into_iter()
         .map(|q| q.unwrap())
-        .collect::<Vec<MessageArtical>>()
+        .collect::<Vec<message::Message>>()
 }
 
 /// This start_db function tests the creation of a database,
@@ -138,7 +107,7 @@ fn start_db() {
 
     let db: Connection = open_db("database.db");
 
-    let message = MessageArtical {
+    let message = message::Message {
         id: 0,
         username: "Andrew".to_string(),
         content: "No".to_string(),

@@ -40,7 +40,7 @@ struct Args {
 /// The main function is the entry point for the program.
 #[tokio::main]
 async fn main() {
-    let args: &Args = &Args::parse();
+    let args: Arc<Args> = Arc::new(Args::parse());
     println!("{:?}", args);
 
     // We only run a server or client. Client by default.
@@ -53,7 +53,7 @@ async fn main() {
 
 /// setup_server() is a helper function that sets up connection listeners,
 /// databases, and creates some channels for replicating the messages.
-async fn setup_server(args: &Args) {
+async fn setup_server(args: Arc<Args>) {
     let address = "0.0.0.0:".to_owned() + &args.port;
     let listener = tokio::net::TcpListener::bind(address).await.unwrap();
 
@@ -96,17 +96,14 @@ async fn server(conn: TcpStream, db: Arc<Mutex<Connection>>) {
 }
 
 /// client_input gets input from the user and writes it to the stream.
-async fn client_input(tx: Sender<Request>) {
+async fn client_input(tx: Sender<Request>, args: Arc<Args>) {
     loop {
         let mut input = String::new();
         // Read input from stdin.
         std::io::stdin().read_line(&mut input).unwrap();
         let input_cleaned = input[0..input.len() - 2].to_string();
 
-        let message = message::Message {
-            user: "USERNAME".to_string(),
-            text: input_cleaned,
-        };
+        let message = message::Message::new(args.username.clone(), input_cleaned);
         let request = Request::AddMessage(message);
         // let response = Response::Message(vec![message]);
 
@@ -117,7 +114,7 @@ async fn client_input(tx: Sender<Request>) {
 /// client is a function that handles the connection and
 /// reads the messages from the stream then print the message
 /// to the screen.
-async fn client(args: &Args) {
+async fn client(args: Arc<Args>) {
     let address = format!("{}:{}", args.address, args.port);
 
     // Connect to the server and get a stream
@@ -126,14 +123,14 @@ async fn client(args: &Args) {
         Err(_) => {
             println!("Could not connect to server. ");
             // Quit the program -- This is not a graceful way to quit.
-            std::process::exit(1);
+            std::process::exit(0);
         }
     };
     let conn = Arc::new(Mutex::new(conn));
 
     // Create a channel for reading user input
     let (tx, rx) = std::sync::mpsc::channel();
-    spawn(client_input(tx));
+    spawn(client_input(tx, Arc::clone(&args)));
 
     let timestamp = chrono::Utc::now().timestamp_millis();
 
@@ -145,7 +142,7 @@ async fn client(args: &Args) {
 
         // Write Connection
         // Get request from the channel or request the last message
-        let request = rx.try_recv().unwrap_or(Request::LastMessages(1));
+        let request = rx.try_recv().unwrap_or(Request::AfterTimestamp(timestamp));
 
         let bytes = bincode::serialize(&request).unwrap();
         write_to_connection(&bytes, Arc::clone(&conn)).await;
