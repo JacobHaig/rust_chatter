@@ -2,7 +2,7 @@
 use rusqlite::Connection;
 
 #[derive(Debug)]
-pub struct MessageArticals {
+pub struct MessageArtical {
     pub id: i32,
     pub username: String,
     pub content: String,
@@ -48,17 +48,34 @@ pub fn delete_message(db: &mut rusqlite::Connection, id: i32) {
 }
 
 /// Inserts a new message into the database.
-pub fn insert_message(db: &rusqlite::Connection, message: MessageArticals) {
+pub fn insert_message(db: &rusqlite::Connection, message: MessageArtical) {
     db.execute(
         "INSERT INTO messages (username, content, timestampms)
-            VALUES (?1, ?2, ?3)",
+        VALUES (?1, ?2, ?3)",
+        rusqlite::params![message.username, message.content, message.timestamp],
+    )
+    .unwrap();
+}
+
+/// Adds a new message into the database.
+pub fn add_message(db: &rusqlite::Connection, mess: crate::message::Message) -> () {
+    let message = MessageArtical {
+        id: 0,
+        username: mess.user,
+        content: mess.text,
+        timestamp: chrono::Utc::now().timestamp_millis(),
+    };
+
+    db.execute(
+        "INSERT INTO messages (username, content, timestampms)
+        VALUES (?1, ?2, ?3)",
         rusqlite::params![message.username, message.content, message.timestamp],
     )
     .unwrap();
 }
 
 /// Returns a list of all messages from the database where a condition is met.
-pub fn where_message(db: &rusqlite::Connection, args: &[&str]) -> Vec<MessageArticals> {
+pub fn where_message(db: &rusqlite::Connection, args: &[&str]) -> Vec<MessageArtical> {
     let condition = args.join(" AND ");
 
     let mut stmt = db
@@ -69,7 +86,7 @@ pub fn where_message(db: &rusqlite::Connection, args: &[&str]) -> Vec<MessageArt
     // then convert the results into a vector of messages.
     let query_iter = stmt
         .query_map([], |row| {
-            Ok(MessageArticals {
+            Ok(MessageArtical {
                 id: row.get(0).unwrap(),
                 username: row.get(1).unwrap(),
                 content: row.get(2).unwrap(),
@@ -81,11 +98,11 @@ pub fn where_message(db: &rusqlite::Connection, args: &[&str]) -> Vec<MessageArt
     query_iter
         .into_iter()
         .map(|q| q.unwrap())
-        .collect::<Vec<MessageArticals>>()
+        .collect::<Vec<MessageArtical>>()
 }
 
 /// Returns the most recent messages from the database.
-pub fn get_recent_messages(db: &rusqlite::Connection, amount: u32) -> Vec<MessageArticals> {
+pub fn get_recent_messages(db: &rusqlite::Connection, amount: u32) -> Vec<MessageArtical> {
     let query = format!(
         "SELECT * FROM messages ORDER BY timestampms DESC LIMIT {}",
         amount
@@ -97,7 +114,7 @@ pub fn get_recent_messages(db: &rusqlite::Connection, amount: u32) -> Vec<Messag
     // then convert the results into a vector of messages.
     let query_iter = stmt
         .query_map([], |row| {
-            Ok(MessageArticals {
+            Ok(MessageArtical {
                 id: row.get(0).unwrap(),
                 username: row.get(1).unwrap(),
                 content: row.get(2).unwrap(),
@@ -109,7 +126,7 @@ pub fn get_recent_messages(db: &rusqlite::Connection, amount: u32) -> Vec<Messag
     query_iter
         .into_iter()
         .map(|q| q.unwrap())
-        .collect::<Vec<MessageArticals>>()
+        .collect::<Vec<MessageArtical>>()
 }
 
 /// This start_db function tests the creation of a database,
@@ -121,18 +138,26 @@ fn start_db() {
 
     let db: Connection = open_db("database.db");
 
-    let message = MessageArticals {
+    let message = MessageArtical {
         id: 0,
         username: "Andrew".to_string(),
         content: "No".to_string(),
         timestamp: timestamp,
     };
 
-    insert_message(&db, message);
+    // insert_message(&db, message);
 
+    // This is a test to see if the message is inserted into the database.
     let results = where_message(&db, &["timestampms > 1627931795666"]);
 
     for message in results {
-        println!("Found person {:?}", message);
+        println!("1: Found person {:?}", message);
+    }
+
+    // This is a test to see if we an abritrary amount of messages.
+    let results = get_recent_messages(&db, 1);
+
+    for message in results {
+        println!("2: Found person {:?}", message);
     }
 }
