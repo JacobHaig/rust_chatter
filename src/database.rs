@@ -30,11 +30,13 @@ pub fn open_db(db_name: &str) -> rusqlite::Connection {
 }
 
 /// Deletes all messages from the database.
+#[allow(dead_code)]
 pub fn delete_all_messages(db: &mut rusqlite::Connection) {
     db.execute("DELETE FROM messages", []).unwrap();
 }
 
 /// Delete a message from the database.
+#[allow(dead_code)]
 pub fn delete_message(db: &mut rusqlite::Connection, id: i32) {
     db.execute("DELETE FROM messages WHERE id = ?", [id])
         .unwrap();
@@ -73,6 +75,7 @@ pub fn get_recent_messages(db: &rusqlite::Connection, amount: u32) -> Vec<messag
 }
 
 /// Returns the most recent messages from the database.
+#[allow(dead_code)]
 pub fn get_messages_at_index(db: &rusqlite::Connection, index: u32) -> Vec<message::Message> {
     let query = format!("SELECT * FROM messages WHERE id = {}", index);
 
