@@ -29,15 +29,17 @@ pub struct Args {
 }
 
 /// The main function is the entry point for the program.
-#[tokio::main]
-async fn main() {
+
+fn main() {
     let args: Arc<Args> = Arc::new(Args::parse());
     println!("{:?}", args);
 
+    // spawn(async { eframe::run_native(Box::new(app), native_options) });
+
     // We only run a server or client. Client by default.
     if args.is_server {
-        server::setup_server(args).await
+        server::setup_server(args);
     } else {
-        client::client(args).await
+        client::client(args);
     }
 }

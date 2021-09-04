@@ -12,6 +12,7 @@ use crate::Args;
 
 /// setup_server() is a helper function that sets up connection listeners,
 /// databases, and creates some channels for replicating the messages.
+#[tokio::main]
 pub async fn setup_server(args: Arc<Args>) {
     let address = "0.0.0.0:".to_owned() + &args.port;
     let listener = tokio::net::TcpListener::bind(address).await.unwrap();
@@ -35,10 +36,14 @@ async fn server(conn: TcpStream, db: Arc<Mutex<Connection>>) {
     // Read Connection
     loop {
         // Read bytes from the connection
-        let bytes_result = networking::read_from_connection(Arc::clone(&connection)).await;
+        let bytes_result = networking::read_from_connection_async(Arc::clone(&connection)).await;
 
         if bytes_result.is_some() {
             let bytes = bytes_result.unwrap();
+
+            if bytes.is_empty() {
+                continue;
+            }
 
             // Convert bytes to a Request
             let request: Request = bincode::deserialize(&bytes).unwrap();
@@ -49,7 +54,7 @@ async fn server(conn: TcpStream, db: Arc<Mutex<Connection>>) {
 
             // Sent the response back to the client as bytes
             let bytes = bincode::serialize(&response).unwrap();
-            networking::write_to_connection(&bytes, Arc::clone(&connection)).await;
+            networking::write_to_connection_async(&bytes, Arc::clone(&connection)).await;
         }
     }
 }

@@ -44,13 +44,16 @@ pub fn delete_message(db: &mut rusqlite::Connection, id: i32) {
 
 /// Adds a new message into the database.
 pub fn add_message(db: &rusqlite::Connection, message: message::Message) {
+    let now = chrono::Utc::now();
+    // now.timestamp_millis();
+
     db.execute(
         "INSERT INTO messages (username, content, timestampms)
         VALUES (?1, ?2, ?3)",
         rusqlite::params![
             message.username,
             message.content,
-            chrono::Utc::now().timestamp_millis()
+            now.timestamp_millis() // chrono::Utc::now().timestamp_millis()
         ],
     )
     .unwrap();
@@ -91,7 +94,7 @@ fn get_messages(db: &Connection, query: String) -> Vec<message::Message> {
                 id: row.get(0).unwrap(),
                 username: row.get(1).unwrap(),
                 content: row.get(2).unwrap(),
-                timestamp: row.get(3).unwrap(),
+                timestamp_ms: row.get(3).unwrap(),
             })
         })
         .unwrap();
@@ -110,11 +113,11 @@ fn start_db() {
 
     let db: Connection = open_db("database.db");
 
-    let message = message::Message {
+    let _message = message::Message {
         id: 0,
         username: "Andrew".to_string(),
         content: "No".to_string(),
-        timestamp: timestamp,
+        timestamp_ms: timestamp,
     };
 
     // insert_message(&db, message);
