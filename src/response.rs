@@ -1,11 +1,11 @@
-use crate::message;
 use serde::{Deserialize, Serialize};
+
+use crate::message::{Message, User};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Response {
     OK,
     Error(String),
-    Message(Vec<message::Message>),
-    // Image(Image),
+    Messages(Vec<Message>),
+    Users(Vec<User>),
 }
-

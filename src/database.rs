@@ -1,138 +1,167 @@
-use rusqlite::Connection;
+use turbosql::Turbosql;
 
-use crate::message;
-
-/// Create a new database connection if database doesn't exist.
-pub fn open_db(db_name: &str) -> rusqlite::Connection {
-    let db = rusqlite::Connection::open(db_name).unwrap();
-
-    db.execute(
-        "CREATE TABLE IF NOT EXISTS messages (
-                id              INTEGER PRIMARY KEY,
-                username        TEXT    NOT NULL, 
-                content         TEXT    NOT NULL, 
-                timestampms     INTEGER NOT NULL
-            )",
-        [],
-    )
-    .unwrap();
-
-    db.execute(
-        "create table if not exists users (
-                username    TEXT NOT NULL, 
-                uuid        TEXT NOT NULL
-            )",
-        [],
-    )
-    .unwrap();
-
-    db
+#[derive(Turbosql, Default, Debug, Clone)]
+pub struct MessageRow {
+    pub rowid: Option<i64>,
+    pub username: Option<String>,
+    pub content: Option<String>,
+    pub timestamp_ms: Option<i64>,
 }
 
-/// Deletes all messages from the database.
-#[allow(dead_code)]
-pub fn delete_all_messages(db: &mut rusqlite::Connection) {
-    db.execute("DELETE FROM messages", []).unwrap();
+#[derive(Turbosql, Default, Debug, Clone)]
+pub struct UserRow {
+    pub rowid: Option<i64>,
+    pub username: Option<String>,
 }
 
-/// Delete a message from the database.
-#[allow(dead_code)]
-pub fn delete_message(db: &mut rusqlite::Connection, id: i32) {
-    db.execute("DELETE FROM messages WHERE id = ?", [id])
+pub fn current_timestamp() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+// Message Namespace
+pub mod message {
+    use super::MessageRow;
+    use crate::message::Message;
+    use turbosql::{execute, select, Turbosql};
+
+    /// Creates a new message
+    #[allow(dead_code)]
+    pub fn add(username: String, content: String) {
+        MessageRow {
+            username: Some(username),
+            content: Some(content),
+            timestamp_ms: Some(super::current_timestamp()),
+            ..Default::default()
+        }
+        .insert()
         .unwrap();
+    }
+
+    // Add a message to the database
+    pub fn add_message(message: Message) {
+        let mut message = message.to_row();
+
+        // Override the timestamp so that it matches the server's time
+        message.timestamp_ms = Some(super::current_timestamp());
+
+        message.insert().unwrap();
+    }
+
+    // From MessageRow to Message
+    impl From<MessageRow> for Message {
+        fn from(row: MessageRow) -> Self {
+            Message {
+                id: row.rowid.unwrap() as i32,
+                username: row.username.unwrap(),
+                content: row.content.unwrap(),
+                timestamp_ms: row.timestamp_ms.unwrap(),
+            }
+        }
+    }
+
+    pub fn to_messages(rows: Vec<MessageRow>) -> Vec<Message> {
+        rows.into_iter().map(|row| row.into()).collect()
+    }
+
+    // Select all messages
+    #[allow(dead_code)]
+    pub fn select_all() -> Vec<MessageRow> {
+        select!(Vec<MessageRow>).unwrap()
+    }
+
+    // Select a message after timestamp
+    pub fn select_after(timestamp_ms: u64) -> Vec<MessageRow> {
+        select!(Vec<MessageRow> "WHERE timestamp_ms >" timestamp_ms).unwrap()
+    }
+
+    // Select most recent message
+    pub fn select_last(i: u32) -> Vec<MessageRow> {
+        select!(Vec<MessageRow> "ORDER BY timestamp_ms DESC LIMIT" i).unwrap()
+    }
+
+    // Delete all messages
+    #[allow(dead_code)]
+    pub fn delete_all() {
+        execute!("DELETE FROM MESSAGEROW").unwrap();
+    }
 }
 
-/// Adds a new message into the database.
-pub fn add_message(db: &rusqlite::Connection, message: message::Message) {
-    let now = chrono::Utc::now();
-    // now.timestamp_millis();
+// User Namespace
+pub mod user {
+    use super::UserRow;
+    use crate::message::User;
+    use turbosql::{execute, select, Turbosql};
 
-    db.execute(
-        "INSERT INTO messages (username, content, timestampms)
-        VALUES (?1, ?2, ?3)",
-        rusqlite::params![
-            message.username,
-            message.content,
-            now.timestamp_millis() // chrono::Utc::now().timestamp_millis()
-        ],
-    )
-    .unwrap();
-}
-
-/// Returns a list of all messages from the database where a condition is met.
-pub fn where_message(db: &rusqlite::Connection, args: &[&str]) -> Vec<message::Message> {
-    let condition = args.join(" AND ");
-    let query = format!("SELECT * FROM messages WHERE {}", condition);
-
-    get_messages(db, query)
-}
-
-/// Returns the most recent messages from the database.
-pub fn get_recent_messages(db: &rusqlite::Connection, amount: u32) -> Vec<message::Message> {
-    let query = format!(
-        "SELECT * FROM messages ORDER BY timestampms DESC LIMIT {}",
-        amount
-    );
-
-    get_messages(db, query)
-}
-
-/// Returns the most recent messages from the database.
-#[allow(dead_code)]
-pub fn get_messages_at_index(db: &rusqlite::Connection, index: u32) -> Vec<message::Message> {
-    let query = format!("SELECT * FROM messages WHERE id = {}", index);
-
-    get_messages(db, query)
-}
-
-fn get_messages(db: &Connection, query: String) -> Vec<message::Message> {
-    let mut stmt = db.prepare(&query).unwrap();
-
-    let query_iter = stmt
-        .query_map([], |row| {
-            Ok(message::Message {
-                id: row.get(0).unwrap(),
-                username: row.get(1).unwrap(),
-                content: row.get(2).unwrap(),
-                timestamp_ms: row.get(3).unwrap(),
-            })
-        })
+    pub fn add_user(user: User) {
+        UserRow {
+            username: Some(user.username),
+            ..Default::default()
+        }
+        .insert()
         .unwrap();
-    query_iter
-        .into_iter()
-        .map(|q| q.unwrap())
-        .collect::<Vec<message::Message>>()
+    }
+
+    pub fn select_all() -> Vec<UserRow> {
+        select!(Vec<UserRow>).unwrap()
+    }
+
+    // From UserRow to User
+    impl From<UserRow> for User {
+        fn from(row: UserRow) -> Self {
+            User {
+                id: row.rowid.unwrap() as i32,
+                username: row.username.unwrap(),
+            }
+        }
+    }
+
+    pub fn to_users(rows: Vec<UserRow>) -> Vec<User> {
+        rows.into_iter().map(|row| row.into()).collect()
+    }
+
+    // Delete all users
+    #[allow(dead_code)]
+    pub fn delete_all() {
+        execute!("DELETE FROM USERROW").unwrap();
+    }
+
+    pub fn remove(username: String) {
+        execute!("DELETE FROM USERROW WHERE username = ?", username).unwrap();
+    }
 }
 
-/// This start_db function tests the creation of a database,
-/// and the insertion of a message, and the retrieval of a message
-/// from the database.
+//
+// Test Cases
 #[test]
-fn start_db() {
-    let timestamp = chrono::Utc::now().timestamp_millis();
-
-    let db: Connection = open_db("database.db");
-
-    let _message = message::Message {
-        id: 0,
-        username: "Andrew".to_string(),
-        content: "No".to_string(),
-        timestamp_ms: timestamp,
-    };
-
-    // insert_message(&db, message);
-
-    // This is a test to see if the message is inserted into the database.
-    let results = where_message(&db, &["timestampms > 1627931795666"]);
-
-    for message in results {
-        println!("1: Found person {:?}", message);
+fn test_add_message_row() {
+    MessageRow {
+        username: Some("bob".to_string()),
+        content: Some("CONTENTER!".to_string()),
+        ..Default::default()
     }
+    .insert()
+    .unwrap();
+}
 
-    // This is a test to see if we an abritrary amount of messages.
-    let results = get_recent_messages(&db, 1);
+#[test]
+fn test_select_all() {
+    let messages = message::select_all();
 
-    for message in results {
-        println!("2: Found person {:?}", message);
-    }
+    dbg!(&messages);
+
+    assert_eq!(messages.len(), 1);
+}
+
+// Test adding a message
+#[test]
+fn test_add_message() {
+    let message = crate::message::Message::new("bob".to_string(), "CONTENT!".to_string());
+    message::add_message(message);
+}
+
+// Delete all messages
+#[test]
+fn test_delete_all() {
+    message::delete_all();
+    user::delete_all();
 }

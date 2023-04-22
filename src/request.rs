@@ -1,41 +1,57 @@
-use std::sync::Arc;
-
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 
-use crate::{database, message, response::Response};
+use crate::{
+    database::{self, message::to_messages, user::to_users},
+    message::{Message, User},
+    response::Response,
+};
 
 /// The client sends a request to the server.
 /// The server responds with a response. The
 /// response is of type `Response`.
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Request {
+    AddMessage(Message),
+    GetMessages(),
     LastMessages(u32),
-    AfterTimestamp(i64),
-    AddMessage(message::Message),
+    AfterTimestamp(u64),
     GetMessageAtIndex(u32),
-    // NewMessages(u64),
+    GetUsers(),
+    AddUser(User),
+    RemoveUser(User),
 }
 
-pub async fn handle_request(request: Request, db: Arc<Mutex<Connection>>) -> Response {
-    let database = db.lock().await;
-
+pub fn handle_request(request: Request) -> Response {
     match request {
-        Request::LastMessages(n) => {
-            let messages = database::get_recent_messages(&database, n);
-            Response::Message(messages)
-        }
-        Request::AfterTimestamp(n) => {
-            let condishion = &("timestampms > ".to_string() + n.to_string().as_str());
-
-            let messages = database::where_message(&database, &[condishion]);
-            Response::Message(messages)
-        }
         Request::AddMessage(message) => {
-            database::add_message(&database, message);
+            database::message::add_message(message);
             Response::OK
         }
+        Request::LastMessages(n) => {
+            let messages = to_messages(database::message::select_last(n));
+            Response::Messages(messages)
+        }
+        Request::GetMessages() => {
+            let messages = to_messages(database::message::select_all());
+            Response::Messages(messages)
+        }
+        Request::AfterTimestamp(n) => {
+            let messages = to_messages(database::message::select_after(n));
+            Response::Messages(messages)
+        }
         Request::GetMessageAtIndex(_) => todo!(),
+
+        Request::AddUser(user) => {
+            database::user::add_user(user);
+            Response::OK
+        }
+        Request::GetUsers() => {
+            let user = to_users(database::user::select_all());
+            Response::Users(user)
+        }
+        Request::RemoveUser(user) => {
+            database::user::remove(user.username);
+            Response::OK
+        }
     }
 }

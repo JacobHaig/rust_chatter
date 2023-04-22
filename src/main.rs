@@ -1,30 +1,29 @@
-use clap::Clap;
+use clap::Parser;
+
 use std::sync::Arc;
 
 mod client;
 mod database;
 mod message;
-mod networking;
+mod network;
 mod request;
 mod response;
 mod server;
 
 /// Args is a struct that contains the command line arguments.
-/// The purpose of this struct is to make it easy to add new
-/// command line arguments using Clap.
-#[derive(Debug, Clap)]
-#[clap(name = "Rust Chatter")]
+#[derive(Debug, Parser)]
+#[command(name = "Chatter")]
 pub struct Args {
-    #[clap(short = 's', long = "server")]
+    #[arg(short = 's', long = "server")]
     is_server: bool,
 
-    #[clap(short, long, required = false, default_value = "127.0.0.1")]
+    #[arg(short, long, required = false, default_value = "127.0.0.1")]
     address: String,
 
-    #[clap(short, long, required = false, default_value = "23432")]
+    #[arg(short, long, required = false, default_value = "23432")]
     port: String,
 
-    #[clap(short, long, required = false, default_value = "unknown")]
+    #[arg(short = 'u', long, required = false, default_value = "unknown")]
     username: String,
 }
 

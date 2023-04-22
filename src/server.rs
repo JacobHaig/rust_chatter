@@ -1,60 +1,36 @@
-use rusqlite::Connection;
+// use rusqlite::Connection;
+use std::net::TcpStream;
 use std::sync::Arc;
-use tokio::net::TcpStream;
-use tokio::sync::Mutex;
-use tokio::task::spawn;
+use std::sync::Mutex;
 
-use crate::database;
-use crate::networking;
+use crate::network;
 use crate::request::handle_request;
-use crate::request::Request;
 use crate::Args;
 
 /// setup_server() is a helper function that sets up connection listeners,
-/// databases, and creates some channels for replicating the messages.
-#[tokio::main]
-pub async fn setup_server(args: Arc<Args>) {
+/// and spawns a new thread for each connection.
+pub fn setup_server(args: Arc<Args>) {
     let address = "0.0.0.0:".to_owned() + &args.port;
-    let listener = tokio::net::TcpListener::bind(address).await.unwrap();
-
-    let db = Arc::new(Mutex::new(database::open_db("database.db")));
+    let listener = std::net::TcpListener::bind(address).unwrap();
 
     loop {
-        // Wait for clients to connect
-        let (conn, _) = listener.accept().await.unwrap();
-
-        // Spawn a new task to handle the client connectison
-        spawn(server(conn, Arc::clone(&db)));
+        let (conn, _) = listener.accept().unwrap();
+        std::thread::spawn(|| server(conn));
     }
 }
 
-/// server is a function that handles reading from connections
-/// then handles the request and sends the response back to the client.
-async fn server(conn: TcpStream, db: Arc<Mutex<Connection>>) {
-    let connection: Arc<Mutex<TcpStream>> = Arc::new(Mutex::new(conn));
+/// server() is the main function for the server.
+fn server(conn: TcpStream) {
+    let connection: &Arc<Mutex<TcpStream>> = &Arc::new(Mutex::new(conn));
 
-    // Read Connection
+    // Read, Handle, Write, Loop
     loop {
-        // Read bytes from the connection
-        let bytes_result = networking::read_from_connection_async(Arc::clone(&connection)).await;
+        let request_result = network::get(connection.clone());
 
-        if bytes_result.is_some() {
-            let bytes = bytes_result.unwrap();
+        if let Some(request) = request_result {
+            let response = handle_request(request);
 
-            if bytes.is_empty() {
-                continue;
-            }
-
-            // Convert bytes to a Request
-            let request: Request = bincode::deserialize(&bytes).unwrap();
-            println!("Server Received: {:?}", request);
-
-            // Process the response from the request
-            let response = handle_request(request, Arc::clone(&db)).await;
-
-            // Sent the response back to the client as bytes
-            let bytes = bincode::serialize(&response).unwrap();
-            networking::write_to_connection_async(&bytes, Arc::clone(&connection)).await;
+            network::send(response, connection.clone());
         }
     }
 }
