@@ -10,6 +10,9 @@ mod request;
 mod response;
 mod server;
 
+// ./target/debug/rust_chatter -s
+// ./target/debug/rust_chatter -u username
+
 /// Args is a struct that contains the command line arguments.
 #[derive(Debug, Parser)]
 #[command(name = "Chatter")]
@@ -28,7 +31,6 @@ pub struct Args {
 }
 
 /// The main function is the entry point for the program.
-
 fn main() {
     let args: Arc<Args> = Arc::new(Args::parse());
     println!("{:?}", args);

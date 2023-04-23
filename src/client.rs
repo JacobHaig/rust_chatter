@@ -1,21 +1,19 @@
 use eframe::egui;
 use egui::{Align, TextEdit};
 use std::net::TcpStream;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::message::{Message, User};
 use crate::request::Request;
 use crate::response::Response;
 use crate::{network, Args};
 
-/// client is a function that handles the connection and
-/// reads the messages from the stream then print the message
-/// to the screen.
+/// client() is the main function for the client.
 pub fn client(args: Arc<Args>) {
     let address = format!("{}:{}", args.address, args.port);
 
     // Connect to the server and get a stream
-    let conn = TcpStream::connect(address).expect("Could not connect to server.");
+    let connection = TcpStream::connect(address).expect("Could not connect to server.");
 
     let user = User {
         username: args.username.to_owned(),
@@ -25,64 +23,40 @@ pub fn client(args: Arc<Args>) {
     let app = App {
         user_list: vec![],
 
-        conn: Arc::new(Mutex::new(conn)),
+        connection: Arc::new(connection),
         message_list: vec![],
-        text_value: "".to_owned(),
+        message_box_value: "".to_owned(),
 
         update_interval: 1.0f32,
         username: args.username.to_owned(),
     };
 
-    let _: Response = network::send_get(Request::AddUser(user), app.conn.clone());
+    let _: Response = network::send_get(Request::AddUser(user), app.connection.clone());
 
     let native_options = eframe::NativeOptions::default();
     eframe::run_native("Chatter", native_options, Box::new(|_cc| Box::new(app))).unwrap();
 }
 
-/// We derive Deserialize/Serialize so we can persist app state on shutdown.
-// #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
-// #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct App {
-    user_list: Vec<User>,
+    connection: Arc<TcpStream>,
 
-    // this how you opt-out of serialization of a member
-    // #[cfg_attr(feature = "persistence", serde(skip))]
-    // value: f32,
-    conn: Arc<Mutex<TcpStream>>,
+    message_box_value: String,
+    username: String,
+
+    user_list: Vec<User>,
     message_list: Vec<Message>,
-    text_value: String,
 
     update_interval: f32,
-    username: String,
 }
 
 impl eframe::App for App {
-    /// Called by the framework to load old app state (if any).
-    // #[cfg(feature = "persistence")]
-    // fn setup(
-    //     &mut self,
-    //     _ctx: &egui::CtxRef,
-    //     _frame: &mut epi::Frame<'_>,
-    //     storage: Option<&dyn epi::Storage>,
-    // ) {
-    //     if let Some(storage) = storage {
-    //         *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
-    //     }
-    // }
-
-    // /// Called by the frame work to save state before shutdown.
-    // #[cfg(feature = "persistence")]
-    // fn save(&mut self, storage: &mut dyn epi::Storage) {
-    //     epi::set_value(storage, epi::APP_KEY, self);
-    // }
-
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         let user = User {
             username: self.username.to_owned(),
             id: 0,
         };
 
-        let _: Response = network::send_get(Request::RemoveUser(user), self.conn.clone());
+        let _: Response = network::send_get(Request::RemoveUser(user), self.connection.clone());
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
@@ -101,18 +75,15 @@ impl eframe::App for App {
 
             // Update Messages
             let request = Request::GetMessages();
-            let response: Response = network::send_get(request, Arc::clone(&self.conn));
+            let response: Response = network::send_get(request, Arc::clone(&self.connection));
 
-            if let Response::Messages(m) = response {
-                // for message in &m {
-                //     println!("{}", message);
-                // }
-                self.message_list = m;
+            if let Response::Messages(messages) = response {
+                self.message_list = messages;
             }
 
             // Update Users
             let request = Request::GetUsers();
-            let response: Response = network::send_get(request, Arc::clone(&self.conn));
+            let response: Response = network::send_get(request, Arc::clone(&self.connection));
 
             if let Response::Users(users) = response {
                 self.user_list = users;
@@ -220,18 +191,20 @@ impl eframe::App for App {
             // egui::TopBottomPanel::bottom("input_area").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.add(
-                    TextEdit::singleline(&mut self.text_value).hint_text("Enter your message"), // .clip_text(true),
+                    TextEdit::singleline(&mut self.message_box_value)
+                        .hint_text("Enter your message"), // .clip_text(true),
                 );
 
                 // When the user presses enter, we send the message to the server.
                 if ui.button("send it").clicked() {
-                    let message = Message::new(self.username.clone(), self.text_value.clone());
+                    let message =
+                        Message::new(self.username.clone(), self.message_box_value.clone());
                     let request = Request::AddMessage(message);
 
-                    self.text_value = String::new();
+                    self.message_box_value = String::new();
 
-                    network::send(request, Arc::clone(&self.conn));
-                    let _response: Option<Response> = network::get(Arc::clone(&self.conn));
+                    network::send(request, Arc::clone(&self.connection));
+                    let _response: Option<Response> = network::get(Arc::clone(&self.connection));
                 }
             });
             // });
@@ -247,38 +220,3 @@ impl eframe::App for App {
         // }
     }
 }
-
-// impl App {
-//     fn update_data(&mut self) {
-//         // After the interval, we will send a request to the server to get the latest messages.
-//         self.update_interval -= egui::InputState::default().unstable_dt;
-
-//         if self.update_interval <= 0.0 {
-//             self.update_interval = 1.0;
-
-//             // Update Messages
-//             let request = Request::LastMessages(10);
-//             let response: Response = network::send_get(request, Arc::clone(&self.conn));
-
-//             if let Response::Messages(m) = response {
-//                 for message in &m {
-//                     println!("{}", message);
-//                 }
-
-//                 self.message_list = m;
-//             }
-
-//             // Update Users
-//             let request = Request::GetUsers();
-//             let response: Response = network::send_get(request, Arc::clone(&self.conn));
-
-//             if let Response::Users(u) = response {
-//                 for user in &u {
-//                     println!("{}", user);
-//                 }
-
-//                 self._user_list = u;
-//             }
-//         }
-//     }
-// }

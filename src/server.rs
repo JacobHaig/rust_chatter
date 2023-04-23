@@ -1,7 +1,6 @@
 // use rusqlite::Connection;
 use std::net::TcpStream;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use crate::network;
 use crate::request::handle_request;
@@ -21,9 +20,9 @@ pub fn setup_server(args: Arc<Args>) {
 
 /// server() is the main function for the server.
 fn server(conn: TcpStream) {
-    let connection: &Arc<Mutex<TcpStream>> = &Arc::new(Mutex::new(conn));
+    let connection: Arc<TcpStream> = Arc::new(conn);
 
-    // Read, Handle, Write, Loop
+    // Read, Handle Request, Write, Loop
     loop {
         let request_result = network::get(connection.clone());
 
